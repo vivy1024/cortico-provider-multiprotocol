@@ -41,6 +41,26 @@ HTTP / SSE、重试退避、计量、流装配、终态判定全在框架的 `pr
 | `src/console/` | 控制台面板:`server.ts` 取状态与改协议,`client.ts` 打成 `dist/console.js` |
 | `tests/` | 干装载、请求体形状、流装配、价目换算、面板契约 |
 
+## 安装与装载 (Installation)
+
+在 Cortico 项目的 `extensions/` 目录下（或直接在 Cortico 根目录），通过 GitHub 直接安装：
+
+```bash
+pnpm add -D github:vivy1024/cortico-provider-multiprotocol
+```
+
+或者在 Cortico 的 `extensions/package.json` 的 `dependencies` / `devDependencies` 中声明：
+
+```json
+{
+  "dependencies": {
+    "cortico-provider-multiprotocol": "github:vivy1024/cortico-provider-multiprotocol"
+  }
+}
+```
+
+随后在 `extensions/` 目录下运行 `pnpm install` 即可自动装载并生效。
+
 ## 装进实例后该看见什么
 
 LLM 设置页多一个 `multiprotocol` 端点类型。填好地址与密钥变量名后,实例设置面板里能:

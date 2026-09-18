@@ -4,6 +4,14 @@
   "type": "module",
   "description": "Multi-protocol provider extension for Cortico: Chat Completions, Responses and Anthropic Messages wires behind one gateway entry",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vivy1024/cortico-provider-multiprotocol.git"
+  },
+  "homepage": "https://github.com/vivy1024/cortico-provider-multiprotocol#readme",
+  "bugs": {
+    "url": "https://github.com/vivy1024/cortico-provider-multiprotocol/issues"
+  },
   "keywords": [
     "cortico-provider",
     "cortico"
@@ -27,6 +35,7 @@
     "README.md"
   ],
   "scripts": {
+    "prepare": "node scripts/build-console.mjs",
     "build": "node scripts/build-console.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.console.json"
