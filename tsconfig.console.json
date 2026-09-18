@@ -1,0 +1,19 @@
+{
+  // 浏览器侧面板的类型检查。
+  //
+  // `types` 继承根配置的 `["node"]` 而不是清空:面板只 `import type` 框架的
+  // `client-panel.ts`,那条类型链经 `console-protocol` → `core/types` 到
+  // `providers/pricebook`,后者 import `node:crypto`。框架在自己的仓里能解析到平级的
+  // `@types/node`,这个包借用框架源码时解析基准不同,清空 `types` 会让那一层报缺模块。
+  // 运行时不受影响:bundle 由 esbuild 以 platform=browser 构建,真用到 Node API 会在那里报错。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    // 面板测试经框架的 `ConsoleUi` 触到它的 `.tsx`;与框架 `tsconfig.web.json` 取同一设置。
+    "jsx": "react-jsx",
+    "noEmit": true
+  },
+  "files": [],
+  "exclude": [],
+  "include": ["src/console/client.ts", "src/console/*-panel.ts", "tests/*-panel.test.ts"]
+}

@@ -1,0 +1,42 @@
+{
+  "name": "cortico-provider-multiprotocol",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Multi-protocol provider extension for Cortico: Chat Completions, Responses and Anthropic Messages wires behind one gateway entry",
+  "license": "MIT",
+  "keywords": [
+    "cortico-provider",
+    "cortico"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.5.0",
+  "main": "./src/index.ts",
+  "cortico": {
+    "kind": "provider",
+    "api": 4,
+    "consoleClient": "dist/console.js"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "files": [
+    "src",
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build-console.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.console.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.28.1",
+    "jsdom": "^30.0.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
