@@ -1,0 +1,45 @@
+{
+  "name": "cortico-provider-multiprotocol",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Multi-protocol provider extension for Cortico: OpenAI Chat Completions, OpenAI Responses and Anthropic Messages",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vivy1024/cortico-provider-multiprotocol.git"
+  },
+  "homepage": "https://github.com/vivy1024/cortico-provider-multiprotocol#readme",
+  "bugs": {
+    "url": "https://github.com/vivy1024/cortico-provider-multiprotocol/issues"
+  },
+  "keywords": [
+    "cortico-provider",
+    "cortico"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.5.0",
+  "main": "./src/index.ts",
+  "cortico": {
+    "kind": "provider",
+    "api": 5
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,10 @@
+# pnpm 的设置只从这里读(`.npmrc` 仅剩 auth 与 registry)。这个文件同时把本目录定为
+# workspace 根,包被 clone 进别的工作区时不会被那边的 lockfile 吸走。
+#
+# esbuild 的 postinstall 只校验随 optionalDependencies 装进来的平台二进制;不放行它,
+# pnpm 会以 ERR_PNPM_IGNORED_BUILDS 让 `pnpm install` 退出非零。
+# 两种拼法并存:pnpm 11 读 allowBuilds,pnpm 10 读 onlyBuiltDependencies,各自忽略不认识的键。
+allowBuilds:
+  esbuild: true
+onlyBuiltDependencies:
+  - esbuild
