@@ -9,7 +9,7 @@ import { ResponseProtocolError } from 'cortico/protocol/open-responses/stream.ts
 import { standardUsage, type GenerateOptions } from 'cortico/core/generation.ts';
 import { OpenAIHttpClient } from 'cortico/providers/transport/chat.ts';
 import type { ResponseAssembly, parseChatResponse } from 'cortico/providers/transport/response-assembly.ts';
-import { AnthropicResponseAssembly, REDACTED_THINKING_PREFIX, anthropicMeters } from './assembly.ts';
+import { AnthropicResponseAssembly, REDACTED_THINKING_PREFIX, TOOL_USE_SIGNATURE_PREFIX, anthropicMeters } from './assembly.ts';
 import { buildAnthropicBody, type HistoryContext } from './body.ts';
 
 /** Messages API 的版本头。上游按它决定响应形状,缺了会被拒。 */
@@ -50,6 +50,12 @@ function outputFrom(content: unknown): OutputItem[] {
           : typeof block.data === 'string' ? { encrypted_content: REDACTED_THINKING_PREFIX + block.data } : {}),
       } as unknown as OutputItem);
     } else if (block.type === 'tool_use') {
+      if (typeof block.signature === 'string' && block.signature) {
+        items.push({
+          type: 'reasoning', id: `rs_${crypto.randomUUID()}`, summary: [],
+          content: [{ type: 'reasoning_text', text: '' }], encrypted_content: TOOL_USE_SIGNATURE_PREFIX + block.signature,
+        } as unknown as OutputItem);
+      }
       items.push({
         type: 'function_call', id: `fc_${crypto.randomUUID()}`, call_id: String(block.id ?? ''),
         name: String(block.name ?? 'unknown_tool'), arguments: JSON.stringify(block.input ?? {}), status: 'completed',

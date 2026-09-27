@@ -13,7 +13,7 @@
 import type { Request } from 'cortico/protocol/open-responses/index.ts';
 import { itemText, type ContextRecord, type ItemOrigin } from 'cortico/protocol/open-responses/context.ts';
 import { requestContext } from 'cortico/providers/transport/native-input.ts';
-import { REDACTED_THINKING_PREFIX } from './assembly.ts';
+import { REDACTED_THINKING_PREFIX, TOOL_USE_SIGNATURE_PREFIX } from './assembly.ts';
 import { toAnthropicTools, toolResultBlock, type AnthropicTool } from './tools.ts';
 
 /** 渲染历史要的本地状态;都由 provider 的 `respond` 选项与宿主给出。 */
@@ -125,17 +125,24 @@ function blobImages(entry: ContextRecord, media: HistoryContext['media']): Array
 function thinkingBlock(entry: ContextRecord, history: HistoryContext, model: unknown): Record<string, unknown> | null {
   const item = entry.item;
   if (item.type !== 'reasoning') return null;
-  const credential = item.encrypted_content;
-  if (typeof credential !== 'string' || !credential) return null;
+  const credential = replayableCredential(entry, history, model);
+  if (!credential) return null;
   if (!entry.context.head && history.keepThinking?.() === false) return null;
-  const owner = entry.context.origin;
-  const current = history.origin;
-  if (!owner || !current || owner.instance !== current.instance || owner.module !== current.module
-    || owner.compatibilityDomain !== current.compatibilityDomain || owner.model !== model) return null;
   if (credential.startsWith(REDACTED_THINKING_PREFIX)) {
     return { type: 'redacted_thinking', data: credential.slice(REDACTED_THINKING_PREFIX.length) };
   }
   return { type: 'thinking', thinking: itemText(item), signature: credential };
+}
+
+/** 推理项的凭据,仅当它来自本次请求的实例、模块、兼容域与模型。 */
+function replayableCredential(entry: ContextRecord, history: HistoryContext, model: unknown): string | null {
+  const item = entry.item;
+  if (item.type !== 'reasoning' || typeof item.encrypted_content !== 'string' || !item.encrypted_content) return null;
+  const owner = entry.context.origin;
+  const current = history.origin;
+  if (!owner || !current || owner.instance !== current.instance || owner.module !== current.module
+    || owner.compatibilityDomain !== current.compatibilityDomain || owner.model !== model) return null;
+  return item.encrypted_content;
 }
 
 /** 同角色的相邻轮并成一轮:Anthropic 要求 user 与 assistant 交替。 */
@@ -166,8 +173,16 @@ export function renderHistory(request: Request, systemInHistory = false, history
   const midRole = systemInHistory ? ('system' as const) : ('user' as const);
   const messages: AnthropicMessage[] = [];
 
+  // 只存 `tool_use` 签名的推理项紧挨在它的调用前面;签名挂回那个调用,不当思考块发。
+  let toolSignature: string | null = null;
   for (const entry of requestContext(request, { context: history.context })) {
     const item = entry.item as unknown as Record<string, unknown>;
+    const signature = toolSignature;
+    toolSignature = null;
+    if (item.type === 'reasoning' && typeof item.encrypted_content === 'string' && item.encrypted_content.startsWith(TOOL_USE_SIGNATURE_PREFIX)) {
+      toolSignature = replayableCredential(entry, history, request.model)?.slice(TOOL_USE_SIGNATURE_PREFIX.length) ?? null;
+      continue;
+    }
     switch (item.type) {
       case 'message': {
         if (item.role === 'system' || item.role === 'developer') {
@@ -198,6 +213,7 @@ export function renderHistory(request: Request, systemInHistory = false, history
           id: String(item.call_id ?? item.id ?? ''),
           name: String(item.name ?? ''),
           input: input_,
+          ...(signature ? { signature } : {}),
         }]);
         break;
       }

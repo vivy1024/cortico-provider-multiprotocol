@@ -148,6 +148,30 @@ describe('renderHistory', () => {
       expect(replay(unsigned).messages).toEqual([]);
     });
 
+    const toolUse = (index: number, id: string, signature?: string) => ({ frames: [
+      { type: 'content_block_start', index, content_block: { type: 'tool_use', id, name: 'look', input: {}, ...(signature ? { signature } : {}) } },
+      { type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: '{}' } },
+      { type: 'content_block_stop', index },
+    ] });
+
+    it('puts a tool_use signature back on the same tool_use, not in a thinking block', () => {
+      const records = storedTurn([thinking(0, 'plan', 'sig-t'), toolUse(1, 'toolu_1', 'sig-call')]);
+      expect(records.map((r) => r.item.type)).toEqual(['reasoning', 'reasoning', 'function_call']);
+      const { messages } = replay(records);
+      expect(messages[0]!.content).toEqual([
+        { type: 'thinking', thinking: 'plan', signature: 'sig-t' },
+        { type: 'tool_use', id: 'toolu_1', name: 'look', input: {}, signature: 'sig-call' },
+      ]);
+    });
+
+    it('sends a tool_use without its signature to another endpoint, and none when there was none', () => {
+      const signed = storedTurn([toolUse(0, 'toolu_1', 'sig-call')]);
+      const other = replay(signed, { origin: { ...ORIGIN, compatibilityDomain: 'd2' } }).messages[0]!.content;
+      expect(other).toEqual([{ type: 'tool_use', id: 'toolu_1', name: 'look', input: {} }]);
+      expect(replay(storedTurn([toolUse(0, 'toolu_2')])).messages[0]!.content)
+        .toEqual([{ type: 'tool_use', id: 'toolu_2', name: 'look', input: {} }]);
+    });
+
     it('drops past reasoning when keepThinking is off and replays none without context records', () => {
       const records = storedTurn([thinking(0, 'pondering', 'sig-1')]);
       expect(replay(records, { keepThinking: () => false }).messages).toEqual([]);

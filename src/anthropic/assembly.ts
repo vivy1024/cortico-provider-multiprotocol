@@ -1,10 +1,12 @@
 /**
  * Anthropic Messages 流 → 标准 Responses 事件。
  *
- * 一个 Anthropic 内容块对应一个 Responses 输出项,块的 `index` 直接当输出序号用。
  * 三种块各自落到不同的项上:`text` → assistant message,`thinking` → reasoning,
  * `tool_use` → function_call。思考块的签名走 `signature_delta` 单独送达,存进
  * reasoning 项的 `encrypted_content`——下一轮要靠它才能把这段思考放回去。
+ *
+ * 有的端点在 `tool_use` 块上附带 `signature`。它前面多出一个只存签名的 reasoning 项
+ * (`TOOL_USE_SIGNATURE_PREFIX`),和思考签名一样按来源决定下一轮能不能放回去。
  */
 import { createResponse, type OutputItem, type Request, type Response, type StreamEvent } from 'cortico/protocol/open-responses/index.ts';
 import { ResponseAccumulator, ResponseProtocolError } from 'cortico/protocol/open-responses/stream.ts';
@@ -16,6 +18,9 @@ import type { ResponseAssembly } from 'cortico/providers/transport/response-asse
  * 重放时还原成对应的块。签名是 base64,不含冒号。
  */
 export const REDACTED_THINKING_PREFIX = 'redacted_thinking:';
+
+/** 同上,`tool_use` 块自带的签名;重放时挂回紧随其后的那个 `tool_use`。 */
+export const TOOL_USE_SIGNATURE_PREFIX = 'tool_use_signature:';
 
 type Item = Record<string, any>;
 
@@ -60,8 +65,9 @@ export class AnthropicResponseAssembly implements ResponseAssembly {
   private started = false;
   private stopReason: string | null = null;
   private usage: TokenMeters = unknownMeters();
-  /** 块序号 → 输出项;Anthropic 的块序号连续,直接当输出序号。 */
   private readonly output: Item[] = [];
+  /** Anthropic 块序号 → 输出序号;带签名的 `tool_use` 前面多一项,两者不再相等。 */
+  private readonly slots = new Map<number, number>();
   private lastTouched: number | null = null;
 
   constructor(request: Request) {
@@ -83,8 +89,28 @@ export class AnthropicResponseAssembly implements ResponseAssembly {
     this.started = true;
   }
 
-  private openBlock(index: number, block: Item, emit: (event: StreamEvent) => void): void {
-    if (this.output[index]) throw new ResponseProtocolError('Anthropic content block indices overlap');
+  /** 追加一项并发出 added;返回它的输出序号。 */
+  private add(item: Item, emit: (event: StreamEvent) => void): number {
+    const index = this.output.length;
+    this.output.push(item);
+    this.send({ type: 'response.output_item.added', output_index: index, item }, emit);
+    return index;
+  }
+
+  private openBlock(block: number, raw: Item, emit: (event: StreamEvent) => void): void {
+    if (this.slots.has(block)) throw new ResponseProtocolError('Anthropic content block indices overlap');
+    this.slots.set(block, this.openItem(raw, emit));
+  }
+
+  private openItem(block: Item, emit: (event: StreamEvent) => void): number {
+    if (block?.type === 'tool_use' && typeof block.signature === 'string' && block.signature) {
+      const holder: Item = { type: 'reasoning', id: `rs_${crypto.randomUUID()}`, summary: [], content: [],
+        encrypted_content: TOOL_USE_SIGNATURE_PREFIX + block.signature };
+      const at = this.add(holder, emit);
+      const part = { type: 'reasoning_text', text: '' };
+      this.send({ type: 'response.content_part.added', output_index: at, item_id: holder.id, content_index: 0, part }, emit);
+      holder.content = [part];
+    }
     if (block?.type === 'tool_use') {
       const item: Item = {
         type: 'function_call',
@@ -95,26 +121,25 @@ export class AnthropicResponseAssembly implements ResponseAssembly {
         arguments: '',
         status: 'in_progress',
       };
-      this.output[index] = item;
-      this.send({ type: 'response.output_item.added', output_index: index, item }, emit);
-      return;
+      return this.add(item, emit);
     }
     const reasoning = block?.type === 'thinking' || block?.type === 'redacted_thinking';
     const item: Item = reasoning
       ? { type: 'reasoning', id: `rs_${crypto.randomUUID()}`, summary: [], content: [] }
       : { type: 'message', id: `msg_${crypto.randomUUID()}`, role: 'assistant', status: 'in_progress', content: [] };
-    this.output[index] = item;
-    this.send({ type: 'response.output_item.added', output_index: index, item }, emit);
+    const index = this.add(item, emit);
     const part = reasoning ? { type: 'reasoning_text', text: '' } : { type: 'output_text', text: '', annotations: [] };
     this.send({ type: 'response.content_part.added', output_index: index, item_id: item.id, content_index: 0, part }, emit);
     item.content = [part];
     // 已经脱敏的思考带不出文本,签名仍要收下,它决定这段能不能放回下一轮。
     if (block?.type === 'redacted_thinking' && typeof block.data === 'string') item.encrypted_content = REDACTED_THINKING_PREFIX + block.data;
+    return index;
   }
 
-  private delta(index: number, delta: Item, emit: (event: StreamEvent) => void): void {
-    const item = this.output[index];
-    if (!item) throw new ResponseProtocolError('Anthropic delta for an unopened content block');
+  private delta(block: number, delta: Item, emit: (event: StreamEvent) => void): void {
+    const index = this.slots.get(block);
+    const item = index === undefined ? undefined : this.output[index];
+    if (index === undefined || !item) throw new ResponseProtocolError('Anthropic delta for an unopened content block');
     this.lastTouched = index;
     if (delta?.type === 'input_json_delta') {
       const fragment = String(delta.partial_json ?? '');
@@ -178,7 +203,6 @@ export class AnthropicResponseAssembly implements ResponseAssembly {
     const reason = incompleteReason(this.stopReason);
     for (let index = 0; index < this.output.length; index++) {
       const item = this.output[index];
-      if (!item) throw new ResponseProtocolError('Anthropic content block indices are not contiguous');
       if (item.type === 'function_call') {
         this.send({ type: 'response.function_call_arguments.done', output_index: index, item_id: item.id, arguments: item.arguments }, emit);
       } else {
