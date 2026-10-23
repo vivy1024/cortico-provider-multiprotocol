@@ -6,5 +6,7 @@
 # 两种拼法并存:pnpm 11 读 allowBuilds,pnpm 10 读 onlyBuiltDependencies,各自忽略不认识的键。
 allowBuilds:
   esbuild: true
+minimumReleaseAgeExclude:
+  - cortico@0.2.4
 onlyBuiltDependencies:
   - esbuild

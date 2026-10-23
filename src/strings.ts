@@ -1,6 +1,6 @@
 /** 控制台与报错文案,按控制台语言取。 */
 
-import type { Language } from 'cortico/core/language.ts';
+import type { Language, LanguageTable } from 'cortico/core/language.ts';
 
 export interface Text {
   groupTitle: string;
@@ -18,7 +18,8 @@ export interface Text {
   protocolUnknown: (value: string, known: string) => string;
 }
 
-const TEXT: Record<Language, Text> = {
+/** 只有 zh 与 en 两份,其余语言沿用下方的 zh 兜底。 */
+const TEXT: LanguageTable<Text> = {
   zh: {
     groupTitle: '协议',
     protocol: '协议',

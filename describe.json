@@ -1,0 +1,19 @@
+{
+  "provider": {
+    "protocols": [
+      "openai-chat-completions",
+      "openai-responses",
+      "anthropic-messages"
+    ],
+    "auth": [
+      "api-key"
+    ],
+    "local": false,
+    "input": [
+      "text",
+      "image"
+    ],
+    "title": "Multi-protocol",
+    "description": "OpenAI Chat Completions、OpenAI Responses、Anthropic Messages,按端点选一种。"
+  }
+}

@@ -72,6 +72,16 @@ const PROVIDER = {
   id: 'multiprotocol',
   title: 'Multi-protocol',
   description: 'OpenAI Chat Completions、OpenAI Responses、Anthropic Messages,按端点选一种。',
+  describe: {
+    // 三种 wire 的选择就是 PROTOCOLS;协议名以这里为准,不自造简写。
+    protocols: [...PROTOCOLS],
+    // 密钥由端点条目里的 `secret` 变量名经宿主密钥表读取,没有其他登录流程。
+    auth: ['api-key'],
+    // 发往端点配置的 HTTP 服务,模型默认不在本机运行。
+    local: false,
+    // 三条 wire 都只在 entry.multimodal 打开时把历史里的图像分片送上游,没有音频/视频。
+    input: ['text', 'image'],
+  },
   defaultBaseUrl: 'https://api.openai.com/v1',
   baseUrlSuggestions: [
     'https://api.openai.com/v1',
