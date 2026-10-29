@@ -159,23 +159,32 @@ export interface RenderedHistory {
 }
 
 /**
- * 只有 `instructions` 进顶层 `system`;历史里的 system / developer 项留在原处。
- * 位置是它们的全部意义——提到最前面,模型会把"刚被告知的事"读成背景。
+ * 顶层 `system` 收两样:`instructions`,以及历史**开头**连续的 system / developer 项。
+ * Core 不填 `instructions`,把整份前缀放成上下文的第一条 system 消息;不把它提上去,
+ * 前缀就会以 user 身份进第一轮,模型把人设与规则读成"用户说的话"。
  *
- * 官方接口收对话中段的 `system` 角色,兼容端点不收,那里降级成 `user`:位置保住,
- * 角色让步。
+ * 开头之后的 system / developer 项仍留在原处:位置是它们的全部意义——提到最前面,
+ * 模型会把"刚被告知的事"读成背景。官方接口收对话中段的 `system` 角色,兼容端点不收,
+ * 那里降级成 `user`:位置保住,角色让步。
  */
 export function renderHistory(request: Request, systemInHistory = false, history: HistoryContext = {}): RenderedHistory {
   const instructions = typeof request.instructions === 'string' ? request.instructions : '';
-  const system: SystemBlock[] | undefined = instructions
-    ? [{ type: 'text', text: instructions, cache_control: CACHE_MARK }]
-    : undefined;
+  const leading: string[] = instructions ? [instructions] : [];
   const midRole = systemInHistory ? ('system' as const) : ('user' as const);
   const messages: AnthropicMessage[] = [];
 
   // 只存 `tool_use` 签名的推理项紧挨在它的调用前面;签名挂回那个调用,不当思考块发。
   let toolSignature: string | null = null;
+  // 还没出现过非 system 项:这一段的 system / developer 归顶层。
+  let atHead = true;
   for (const entry of requestContext(request, { context: history.context })) {
+    const head = entry.item as unknown as Record<string, unknown>;
+    if (atHead && head.type === 'message' && (head.role === 'system' || head.role === 'developer')) {
+      const text = textOf(head.content);
+      if (text) leading.push(text);
+      continue;
+    }
+    atHead = false;
     const item = entry.item as unknown as Record<string, unknown>;
     const signature = toolSignature;
     toolSignature = null;
@@ -229,6 +238,10 @@ export function renderHistory(request: Request, systemInHistory = false, history
         break;
     }
   }
+  // 顶层合成一块并标缓存:前缀整段不变,缓存命中才稳定。
+  const system: SystemBlock[] | undefined = leading.length > 0
+    ? [{ type: 'text', text: leading.join('\n\n'), cache_control: CACHE_MARK }]
+    : undefined;
   return { system, messages };
 }
 
@@ -244,9 +257,14 @@ export function buildAnthropicBody(request: Request, stream: boolean, systemInHi
   if (system) body.system = system;
   const tools = toAnthropicTools(request.tools);
   if (tools) body.tools = tools;
-  if (request.tool_choice === 'required') body.tool_choice = { type: 'any' };
-  else if (request.tool_choice === 'none') body.tool_choice = { type: 'none' };
-  else if (tools) body.tool_choice = { type: 'auto' };
+  const choice = request.tool_choice;
+  if (choice === 'required') body.tool_choice = { type: 'any' };
+  else if (choice === 'none') body.tool_choice = { type: 'none' };
+  // 指名某个函数:Chat 那条 wire 认 `{type:'function',name}`,这里对应 Anthropic 的 `{type:'tool',name}`。
+  // 不映射就会静默退回 auto,模型可以不调用被点名的工具。
+  else if (tools && choice && typeof choice === 'object' && choice.type === 'function' && 'name' in choice && choice.name) {
+    body.tool_choice = { type: 'tool', name: String(choice.name) };
+  } else if (tools) body.tool_choice = { type: 'auto' };
   if (typeof request.temperature === 'number') body.temperature = request.temperature;
   const effort = request.reasoning?.effort;
   const budget = effort ? EFFORT_BUDGET[effort] : undefined;

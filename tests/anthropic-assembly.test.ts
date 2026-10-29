@@ -122,3 +122,33 @@ describe('anthropicMeters', () => {
     expect(meters.details?.cacheCreationInput).toEqual({ quantity: 0, unit: 'token' });
   });
 });
+
+describe('AnthropicResponseAssembly · 终账在 message_delta', () => {
+  // 官方接口在 message_delta 只补输出计数;NUG/antigravity 通道把整份终账放这里:
+  // input_tokens 是不含缓存的净额,cache_read_input_tokens 单列。两条都要认。
+  it('reads the full terminal tally from message_delta when it carries input_tokens', () => {
+    const { response, meters } = run([
+      { type: 'message_start', message: { id: 'msg_1', model: 'gemini', usage: { input_tokens: 18157, output_tokens: 0 } } },
+      { type: 'content_block_start', index: 0, content_block: { type: 'text' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'ok' } },
+      {
+        type: 'message_delta', delta: { stop_reason: 'end_turn' },
+        usage: { input_tokens: 2051, output_tokens: 28, cache_read_input_tokens: 16106 },
+      },
+    ]);
+    // 2051 净额 + 16106 缓存命中 = 18157 总输入
+    expect(meters).toMatchObject({ uncachedInput: 2051, cachedInput: 16106, input: 18157, output: 28 });
+    expect(response.status).toBe('completed');
+  });
+
+  it('keeps the start tally when message_delta carries output only', () => {
+    const { meters } = run([
+      START,
+      { type: 'content_block_start', index: 0, content_block: { type: 'text' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'ok' } },
+      { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 7 } },
+    ]);
+    // START 的 10 净额 + 4 命中 保住,只更新输出
+    expect(meters).toMatchObject({ uncachedInput: 10, cachedInput: 4, input: 14, output: 7 });
+  });
+});

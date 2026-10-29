@@ -31,6 +31,10 @@ function number(value: unknown): number | null {
 /**
  * Anthropic 把缓存读写单列,`input_tokens` 已经不含它们。总输入要把三者相加,
  * 否则按输入计价的那一档会少算。
+ *
+ * 这份方言不单列思考计数(思考量并在 `output_tokens` 里),所以 `reasoning` 只在端点另给
+ * `reasoning_tokens` 时才有值,否则是 null。不填 0:0 的意思是「没思考」,那是假话;
+ * Core 的约定是缺失的计量保持未知,计费与缓存统计读 meters,不读 `response.usage`。
  */
 export function anthropicMeters(raw: Record<string, any> | null | undefined): TokenMeters {
   if (!raw) return unknownMeters();
@@ -47,7 +51,7 @@ export function anthropicMeters(raw: Record<string, any> | null | undefined): To
     total: input !== null && output !== null ? input + output : null,
     cachedInput: cacheRead,
     uncachedInput,
-    reasoning: null,
+    reasoning: number(raw.reasoning_tokens),
     ...(cacheWrite === null ? {} : { details: { cacheCreationInput: { quantity: cacheWrite, unit: 'token' } } }),
     native: structuredClone(raw),
   };
@@ -179,11 +183,18 @@ export class AnthropicResponseAssembly implements ResponseAssembly {
         break;
       case 'message_delta': {
         if (typeof event.delta?.stop_reason === 'string') this.stopReason = event.delta.stop_reason;
-        // message_delta 的 usage 只带输出计数,输入侧仍以 message_start 那份为准。
+        // 官方接口在 message_delta 只补输出计数;但实测 NUG/antigravity 通道把整份终账
+        // 放在这里——`input_tokens` 变成不含缓存的净额,`cache_read_input_tokens` 单列。
+        // 只挑 output 会把缓存命中的部分当成"没命中",按输入计价的档位就永远算错。
+        // 判据是有没有 `input_tokens`:有就是终账,整份重算;没有才按旧的只补输出。
         if (event.usage) {
-          const output = number(event.usage.output_tokens);
-          if (output !== null) {
-            this.usage = { ...this.usage, output, total: this.usage.input !== null ? this.usage.input + output : null };
+          if (number(event.usage.input_tokens) !== null) {
+            this.usage = anthropicMeters(event.usage);
+          } else {
+            const output = number(event.usage.output_tokens);
+            if (output !== null) {
+              this.usage = { ...this.usage, output, total: this.usage.input !== null ? this.usage.input + output : null };
+            }
           }
         }
         break;

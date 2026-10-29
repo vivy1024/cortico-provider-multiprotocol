@@ -3,6 +3,8 @@ import type { Logger } from 'cortico/core/types.ts';
 import type { PriceDefinition } from 'cortico/providers/pricebook.ts';
 import { isContextOverflow } from 'cortico/providers/transport/errors.ts';
 import { ResponsesProvider } from 'cortico/providers/openai-responses-compat/native.ts';
+import type { ResponseAssembly } from 'cortico/providers/transport/response-assembly.ts';
+import { TolerantResponseAssembly } from './responses-assembly.ts';
 import { ModelCatalog } from './catalog.ts';
 import { moduleConfig } from './config.ts';
 import { ChatCompletionsProvider } from './native.ts';
@@ -30,6 +32,13 @@ interface DelegateDeps {
   keepThinking: () => boolean;
 }
 
+/** Responses wire 换上容错装配器,其余照 Core 的实现。见 `responses-assembly.ts`。 */
+class TolerantResponsesProvider extends ResponsesProvider {
+  protected override responseAssembly(): ResponseAssembly {
+    return new TolerantResponseAssembly();
+  }
+}
+
 /** 协议选一条 wire;三条都收同一组路径、请求头与请求体配置。 */
 function createDelegate(protocol: Protocol, deps: DelegateDeps): BaseProvider {
   const { baseUrl, apiKey, options, log, media, keepThinking } = deps;
@@ -42,7 +51,7 @@ function createDelegate(protocol: Protocol, deps: DelegateDeps): BaseProvider {
     log,
     media,
   };
-  if (protocol === 'openai-responses') return new ResponsesProvider({ ...shared, keepThinking });
+  if (protocol === 'openai-responses') return new TolerantResponsesProvider({ ...shared, keepThinking });
   if (protocol === 'anthropic-messages') {
     return new AnthropicProvider({ ...shared, keepThinking, systemInHistory: options?.systemInHistory === true });
   }

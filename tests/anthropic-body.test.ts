@@ -259,3 +259,58 @@ describe('tools', () => {
     expect((block.content as Array<Record<string, unknown>>).map((b) => b.type)).toEqual(['image', 'text']);
   });
 });
+
+describe('renderHistory · 开头 system 提升到顶层', () => {
+  // Core 不填 instructions,前缀是上下文第一条 system 消息;不提升它就会以 user 身份进第一轮。
+  it('hoists leading system items into the top-level system block', () => {
+    const { system, messages } = renderHistory(req({
+      input: [
+        { type: 'message', role: 'system', content: '你是羽书。' },
+        { type: 'message', role: 'user', content: '开播' },
+      ] as never,
+    }));
+    expect(system).toEqual([{ type: 'text', text: '你是羽书。', cache_control: { type: 'ephemeral' } }]);
+    expect(messages).toEqual([{ role: 'user', content: [{ type: 'text', text: '开播' }] }]);
+  });
+
+  it('joins instructions and several leading system/developer items in order', () => {
+    const { system } = renderHistory(req({
+      instructions: 'A',
+      input: [
+        { type: 'message', role: 'system', content: 'B' },
+        { type: 'message', role: 'developer', content: 'C' },
+        { type: 'message', role: 'user', content: 'hi' },
+      ] as never,
+    }));
+    expect(system?.[0]?.text).toBe('A\n\nB\n\nC');
+  });
+
+  it('leaves a system item after the first turn in place', () => {
+    const { system, messages } = renderHistory(req({
+      input: [
+        { type: 'message', role: 'system', content: '前缀' },
+        { type: 'message', role: 'user', content: 'hi' },
+        { type: 'message', role: 'assistant', content: 'ok' },
+        { type: 'message', role: 'system', content: '天黑了' },
+      ] as never,
+    }));
+    expect(system?.[0]?.text).toBe('前缀');
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
+    expect(messages[2]!.content[0]).toEqual({ type: 'text', text: '天黑了' });
+  });
+});
+
+describe('buildAnthropicBody · tool_choice', () => {
+  const tools = [{ type: 'function', name: 'mc_do', description: 'act', parameters: { type: 'object', properties: {} } }];
+  it('maps a named function choice to an Anthropic tool choice', () => {
+    const body = buildAnthropicBody(req({
+      input: 'go', tools: tools as never, tool_choice: { type: 'function', name: 'mc_do' } as never,
+    }), false);
+    expect(body.tool_choice).toEqual({ type: 'tool', name: 'mc_do' });
+  });
+
+  it('keeps auto when tools are present and no choice is given', () => {
+    const body = buildAnthropicBody(req({ input: 'go', tools: tools as never }), false);
+    expect(body.tool_choice).toEqual({ type: 'auto' });
+  });
+});
